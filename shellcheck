@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+    echo "Usage: $0 [script-to-check]"
+    echo "  [script-to-check]: Optional. Path to a specific shell script to check."
+    exit 1
+}
+
+if [[ "${1:-}" =~ ^(-h|--help)$ ]]; then
+    usage
+fi
+
+# Resolve the directory where the original script (not the symlink) resides
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+    DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+    SOURCE="$(readlink "$SOURCE")"
+    [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+REPO_DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+
+IMAGE_NAME="docker-shellcheck:latest"
+
+if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
+    echo "Building Docker image '$IMAGE_NAME' from ${REPO_DIR}"
+    docker build -t "$IMAGE_NAME" "$REPO_DIR"
+fi
+
+if [ $# -eq 0 ]; then
+    echo "Running ShellCheck recursively on the current directory..."
+    docker run --rm \
+        -v "$(pwd)":/workdir \
+        "$IMAGE_NAME"
+else
+    echo "Running ShellCheck on specified file(s): $@"
+    docker run --rm -v "$(pwd)":/mnt koalaman/shellcheck:latest "$@"
+fi
